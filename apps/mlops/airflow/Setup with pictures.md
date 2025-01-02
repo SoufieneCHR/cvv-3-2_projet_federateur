@@ -17,15 +17,11 @@
 
 ![](./images/media/image3.png)
 
-**3. Création des fichiers de déploiement pour PostgreSQL**
-
-![](./images/media/image4.png)
-
-**4. Configuration des services**
+**3. Configuration des services**
 
 ![](./images/media/image5.png)
 
-**5. Accéder à Airflow**
+**4. Accéder à Airflow**
 
 ![](./images/media/image6.png)
 
@@ -36,6 +32,6 @@
 
 ![](./images/media/image8.png)
 
-**8. Suivi et gestion des logs**
+**5. Suivi et gestion des logs**
 
 ![](./images/media/image9.png)
