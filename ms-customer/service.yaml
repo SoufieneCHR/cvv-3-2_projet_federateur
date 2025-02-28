@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ms-customer
+spec:
+  selector:
+    app: ms-customer
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8085
+  type: LoadBalancer
