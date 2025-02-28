@@ -1,0 +1,21 @@
+---
+# tasks file for commun
+- name: Update and Upgrade System
+  become: yes
+  apt:
+    update_cache: yes
+    upgrade: dist
+  become: yes
+
+- name: Install Required Packages
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gpg
+      - wget
+      - vim
+      - git
+    state: present
+  become: yes

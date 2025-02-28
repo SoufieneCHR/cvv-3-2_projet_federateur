@@ -1,0 +1,7 @@
+---
+- name: Déployer CRI-O et Kubernetes
+  hosts: all  # Cible tous les hôtes définis dans votre inventaire
+  roles:
+    - role: crio  
+    - role: k8s   
+    - role: commun 

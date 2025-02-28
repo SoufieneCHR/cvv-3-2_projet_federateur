@@ -1,0 +1,188 @@
+---
+# tasks file for roles/k8s
+- name: Add Kubernetes repository
+  block:
+    - name: Add Kubernetes GPG key
+      shell: curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      args:
+        creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+    - name: Add Kubernetes repository
+      lineinfile:
+        path: /etc/apt/sources.list.d/kubernetes.list
+        line: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /"
+        create: yes
+
+- name: Install Kubernetes components
+  apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    update_cache: yes
+    state: present
+  become: yes
+
+- name: Hold Kubernetes packages
+  dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubelet
+    - kubeadm
+    - kubectl
+  become: yes
+
+- name: Ensure kubelet configuration is correct
+  block:
+    - name: Check if kubelet config file exists
+      stat:
+        path: /var/lib/kubelet/config.yaml
+      register: kubelet_config
+
+    - name: Generate kubelet config if missing
+      command: kubeadm init phase kubelet-start
+      when: not kubelet_config.stat.exists
+      become: yes
+
+    - name: Ensure cgroup driver is set to systemd
+      lineinfile:
+        path: /var/lib/kubelet/config.yaml
+        regexp: '^cgroupDriver:'
+        line: 'cgroupDriver: systemd'
+      become: yes
+
+- name: Restart kubelet after configuration
+  systemd:
+    name: kubelet
+    state: restarted
+    enabled: yes
+  become: yes
+
+- name: Verify kubelet status
+  command: systemctl status kubelet
+  register: kubelet_status
+  failed_when: false
+  changed_when: false
+  become: yes
+
+- name: Display kubelet status
+  debug:
+    var: kubelet_status.stdout
+
+- name: Ensure container runtime is running
+  systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  loop:
+    - crio
+  become: yes
+  when: "'masters' in group_names"
+
+- name: Ensure ip_forward is enabled
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    state: present
+    reload: yes
+  become: yes
+
+- name: Initialize Kubernetes cluster (Master)
+  command: >
+    kubeadm init --apiserver-advertise-address=10.0.0.30
+    --apiserver-cert-extra-sans=10.0.0.30
+    --pod-network-cidr=192.168.0.0/16
+    --node-name master-node
+    --ignore-preflight-errors Swap
+  register: kubeadm_init
+  when: "'masters' in group_names"
+  become: yes
+
+- name: Debug kubeadm_init output
+  debug:
+    var: kubeadm_init.stdout
+  when: "'masters' in group_names"
+
+- name: Debug kubeadm_init errors
+  debug:
+    var: kubeadm_init.stderr
+  when: "'masters' in group_names"
+
+- name: Retrieve join command from master node
+  command: kubeadm token create --print-join-command
+  register: join_command
+  when: "'masters' in group_names"
+  become: yes
+
+- name: Debug join command
+  debug:
+    var: join_command.stdout
+  when: "'masters' in group_names"
+
+- name: Share join command with worker nodes
+  add_host:
+    name: "{{ item }}"
+    join_command_full: "{{ join_command.stdout }}"
+  with_items: "{{ groups['workers'] }}"
+  when: "'masters' in group_names"
+
+- name: Join worker nodes to the cluster
+  command: "{{ hostvars[inventory_hostname]['join_command_full'] }}"
+  when: "'workers' in group_names"
+  become: yes
+
+- name: Create .kube directory for the current user
+  file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    mode: '0755'
+  become: yes
+
+- name: Copy Kubernetes admin config to user's .kube directory
+  command: cp -f /etc/kubernetes/admin.conf {{ ansible_env.HOME }}/.kube/config
+  become: yes
+  when: "'masters' in group_names"
+
+- name: Change ownership of .kube/config file
+  file:
+    path: "{{ ansible_env.HOME }}/.kube/config"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0600'
+  become: yes
+  when: "'masters' in group_names"
+
+
+- name : set permission
+  file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    mode: '0777'
+    recurse: yes
+  when: "'workers' in group_names"
+  become: yes
+
+
+
+- name: Copy Kubernetes admin config to worker nodes
+  copy:
+    src: "{{ ansible_env.HOME }}/.kube/config"
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0600'
+    remote_src: yes
+  when: "'workers' in group_names"
+  become: yes
+
+- name: Installer Calico sur Kubernetes
+  when: "'masters' in group_names"
+  block:
+    - name: Télécharger le fichier YAML de Calico
+      get_url:
+        url: "https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml"
+        dest: "/tmp/calico.yaml"
+
+    - name: Appliquer le fichier YAML de Calico
+      command: kubectl apply -f /tmp/calico.yaml --validate=false
+

@@ -1,0 +1,32 @@
+---
+# tasks file for crio
+- name: Add CRI-O repository
+  block:
+    - name: Add CRI-O GPG key
+      shell: |
+        curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
+      args:
+        creates: /etc/apt/keyrings/cri-o-apt-keyring.gpg
+
+    - name: Add CRI-O repository
+      shell: |
+        echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/deb/ /" | sudo tee /etc/apt/sources.list.d/cri-o.list
+      args:
+        creates: /etc/apt/sources.list.d/cri-o.list
+
+    - name: Install CRI-O
+      become: yes
+      apt:
+        name: cri-o
+        update_cache: yes
+        state: present
+
+    - name: Start and enable CRI-O
+      systemd:
+        name: crio
+        enabled: yes
+        state: started
+      become: yes
+
+
+
